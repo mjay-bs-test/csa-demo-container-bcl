@@ -1,0 +1,8 @@
+site_name: "csa-demo-container-bcl-dev"
+site_description: "Development documentation for csa-demo-container-bcl"
+
+nav:
+  - Introduction: index.md
+
+plugins:
+  - techdocs-core

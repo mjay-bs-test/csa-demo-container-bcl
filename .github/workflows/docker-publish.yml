@@ -1,0 +1,76 @@
+name: Build and publish container
+
+on:
+  push:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: "ghcr.io/mjay-bs-test/csa-demo-container-bcl"
+  DEPLOY_REPO: "mjay-bs-test/csa-demo-container-bcl-deploy"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: "${{ github.sha }}"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: "${{ env.IMAGE_NAME }}"
+          tags: |
+            type=sha,prefix=,format=long
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: "${{ steps.meta.outputs.tags }}"
+          labels: "${{ steps.meta.outputs.labels }}"
+
+  update-deployment:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployment repo
+        uses: actions/checkout@v4
+        with:
+          repository: "${{ env.DEPLOY_REPO }}"
+          token: "${{ secrets.DEPLOY_TOKEN }}"
+          path: deploy
+
+      - name: Update image tag in values.yaml
+        run: |
+          cd deploy
+          # Update the image tag in values.yaml
+          sed -i "s|tag:.*|tag: ${{ github.sha }}|g" values.yaml
+          
+      - name: Commit and push changes
+        run: |
+          cd deploy
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add values.yaml
+          git diff --staged --quiet || git commit -m "chore: update image tag to ${{ github.sha }}"
+          git push
